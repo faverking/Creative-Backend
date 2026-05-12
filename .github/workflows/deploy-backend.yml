@@ -64,6 +64,7 @@ jobs:
             set -e
 
             APP_NAME="mononest-api"
+            LEGACY_APP_NAME="mononest"
             RELEASE_ID="${{ github.sha }}"
             APP_ROOT="/www/apps/backend"
             RELEASE_DIR="$APP_ROOT/releases/$RELEASE_ID"
@@ -91,7 +92,13 @@ jobs:
             ln -sfn "$RELEASE_DIR" "$CURRENT_DIR"
 
             cd "$CURRENT_DIR"
-            pm2 startOrReload ecosystem.config.cjs --env production --update-env
+            if pm2 describe "$LEGACY_APP_NAME" >/dev/null 2>&1; then
+              pm2 delete "$LEGACY_APP_NAME"
+            fi
+            if pm2 describe "$APP_NAME" >/dev/null 2>&1; then
+              pm2 delete "$APP_NAME"
+            fi
+            pm2 start ecosystem.config.cjs --env production --update-env
             pm2 save
 
             CURRENT_RELEASE="$(readlink -f "$CURRENT_DIR")"
