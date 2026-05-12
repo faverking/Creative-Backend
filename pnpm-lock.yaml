@@ -65,6 +65,9 @@ importers:
       mongoose:
         specifier: ^8.19.2
         version: 8.23.0
+      multer:
+        specifier: ^2.1.1
+        version: 2.1.1
       passport:
         specifier: ^0.7.0
         version: 0.7.0
