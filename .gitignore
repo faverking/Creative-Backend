@@ -3,9 +3,10 @@ dist
 coverage
 .DS_Store
 .storage
+.deploy-package
 .env
 .env.*
 .tmp-*
 *.log
-pnpm-lock.yaml
+backend.tar.gz
 tools/mongodb/*.tmp
