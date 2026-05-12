@@ -80,5 +80,12 @@
   "engines": {
     "node": ">=20"
   },
-  "packageManager": "pnpm@10.11.0"
+  "packageManager": "pnpm@10.11.0",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@nestjs/core",
+      "argon2",
+      "sharp"
+    ]
+  }
 }
