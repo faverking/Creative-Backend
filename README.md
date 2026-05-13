@@ -8,7 +8,7 @@
 - 业务分层：`Controller -> Service/Application -> Repository -> Schema`
 - 安全基线：Helmet、CORS 白名单、参数校验、限流、统一响应、全局异常过滤
 - 检索能力：Mongo 全文检索、快速搜索、精选推荐、相关推荐
-- 运维路径：GitHub Actions 自动构建发布到阿里云，生产进程由 PM2 管理
+- 运维路径：GitHub Actions 自动构建发布到阿里云，生产进程由 PM2 管理，部署后执行健康检查
 
 ## 本地开发
 
@@ -60,7 +60,7 @@ pnpm pm2:stop
 生产唯一主路径为 GitHub Actions 自动发布：
 
 ```text
-push main -> GitHub Actions 构建 -> 上传阿里云 -> release 目录解压 -> PM2 startOrReload
+push main -> GitHub Actions 构建 -> 上传阿里云 -> release 目录解压 -> PM2 启动当前 release
 ```
 
 部署工作流位于：
@@ -76,6 +76,12 @@ deploy/env.production.example
 ```
 
 详细服务器准备、目录约定、Secrets、回滚和排障说明见 [工程目录与运行指南](./docs/工程目录与运行指南.md)。
+
+健康检查默认地址：
+
+```text
+GET /api/v1/health
+```
 
 ## 文档索引
 

@@ -18,6 +18,7 @@ import { envValidationSchema } from './config/env.validation';
 import { DraftsModule } from './drafts/drafts.module';
 import { FavoritesModule } from './favorites/favorites.module';
 import { FeaturedContentsModule } from './featured-contents/featured-contents.module';
+import { HealthModule } from './health/health.module';
 import { HomeModule } from './home/home.module';
 import { HistoryModule } from './history/history.module';
 import { AuditModule } from './infra/audit/audit.module';
@@ -70,6 +71,7 @@ const envFilePath =
     CommentsModule,
     FavoritesModule,
     FeaturedContentsModule,
+    HealthModule,
     HomeModule,
     HistoryModule,
     DraftsModule,

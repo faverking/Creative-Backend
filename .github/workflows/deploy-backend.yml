@@ -74,6 +74,7 @@ jobs:
             CURRENT_DIR="$APP_ROOT/current"
             SHARED_DIR="$APP_ROOT/shared"
             ENV_FILE="/www/env/backend/.env"
+            HEALTH_RESPONSE_FILE="/tmp/mononest-health-response.json"
 
             mkdir -p "$RELEASE_DIR" "$SHARED_DIR"
             tar -xzf "$SHARED_DIR/backend.tar.gz" -C "$RELEASE_DIR"
@@ -102,7 +103,39 @@ jobs:
               pm2 delete "$APP_NAME"
             fi
             pm2 start ecosystem.config.cjs --env production --update-env
+
+            if ! pm2 describe pm2-logrotate >/dev/null 2>&1; then
+              pm2 install pm2-logrotate
+            fi
+            pm2 set pm2-logrotate:max_size 20M
+            pm2 set pm2-logrotate:retain 14
+            pm2 set pm2-logrotate:compress true
+
             pm2 save
+
+            APP_PORT="$(grep -E '^PORT=' "$RELEASE_DIR/.env" | tail -n 1 | cut -d= -f2-)"
+            APP_PREFIX="$(grep -E '^API_PREFIX=' "$RELEASE_DIR/.env" | tail -n 1 | cut -d= -f2-)"
+            APP_PORT="${APP_PORT:-3000}"
+            APP_PREFIX="${APP_PREFIX:-api/v1}"
+            APP_PREFIX="${APP_PREFIX#/}"
+            APP_PREFIX="${APP_PREFIX%/}"
+            HEALTH_URL="http://127.0.0.1:$APP_PORT/$APP_PREFIX/health"
+
+            for ATTEMPT in $(seq 1 15); do
+              if curl -fsS "$HEALTH_URL" -o "$HEALTH_RESPONSE_FILE"; then
+                echo "Health check passed: $HEALTH_URL"
+                cat "$HEALTH_RESPONSE_FILE"
+                break
+              fi
+
+              if [ "$ATTEMPT" -eq 15 ]; then
+                echo "Health check failed after $ATTEMPT attempts: $HEALTH_URL"
+                pm2 logs "$APP_NAME" --lines 80 --nostream || true
+                exit 1
+              fi
+
+              sleep 2
+            done
 
             CURRENT_RELEASE="$(readlink -f "$CURRENT_DIR")"
             find "$APP_ROOT/releases" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' \

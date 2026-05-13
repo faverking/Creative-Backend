@@ -31,6 +31,17 @@
   - `articles`：`published + approved + public + not deleted`
   - `books / topics / images`：`approved + public`
 
+### 健康检查
+
+#### `GET /health`
+- 鉴权：公开
+- 用途：部署后和运维侧存活检查
+- 返回：
+  - `status`：固定为 `ok`
+  - `service`：固定为 `mononest-api`
+  - `uptime`：当前 Node.js 进程运行秒数
+  - `timestamp`：服务端 ISO 时间
+
 ## 2. Auth
 
 ### `POST /auth/register`
