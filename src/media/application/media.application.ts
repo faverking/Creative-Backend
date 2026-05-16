@@ -1,4 +1,5 @@
 import { basename, extname } from 'node:path';
+import { readFile, rm } from 'node:fs/promises';
 import {
   BadRequestException,
   ConflictException,
@@ -624,55 +625,46 @@ export class MediaApplicationService {
       ...file,
       originalname: normalizeMediaFileName(file.originalname),
     }));
-    const validatedFiles = normalizedFiles.map((file) => this.validateUploadedFile(mediaType, file));
-    const hashedFiles = validatedFiles.map((file) => ({
-      file,
-      sha256: this.storageService.createSha256(file.buffer),
-    }));
-
-    const existingByHash = new Map(
-      (
-        await this.mediaRepository.findExistingByHashes(
-          mediaType,
-          Array.from(new Set(hashedFiles.map((item) => item.sha256))),
-        )
-      ).map((item) => [item.sha256, item]),
-    );
-
     const ioConcurrency = this.configService.get<number>('media.ioConcurrency', 4);
     const requestCache = new Map<string, MediaSummary>();
 
-    return mapWithConcurrency(hashedFiles, ioConcurrency, async (item) => {
-      const cached = requestCache.get(item.sha256);
+    return this.mapUploadedFilesWithCleanup(normalizedFiles, ioConcurrency, async (file) => {
+      const validatedFile = this.validateUploadedFile(mediaType, file);
+      const buffer = await this.loadUploadedFileBuffer(validatedFile);
+      const sha256 = this.storageService.createSha256(buffer);
+      const cached = requestCache.get(sha256);
       if (cached) {
         return cached;
       }
 
-      const existing = existingByHash.get(item.sha256);
+      const [existing] = await this.mediaRepository.findExistingByHashes(mediaType, [sha256]);
       if (existing) {
         const summary = this.toMediaSummary(existing);
-        requestCache.set(item.sha256, summary);
+        requestCache.set(sha256, summary);
         return summary;
       }
 
-      const prepared = await this.preparePersistedFile(mediaType, item.file);
+      const prepared = await this.preparePersistedFile(mediaType, {
+        ...validatedFile,
+        buffer,
+      });
 
       const mediaId = new Types.ObjectId().toString();
       const storageResult = await this.storageService.saveBuffer({
         mediaId,
         mediaType,
         extension: prepared.extension,
-        buffer: prepared.file.buffer,
+        buffer: prepared.file.buffer!,
       });
 
       const previewStorageResult = prepared.imagePreview
         ? await this.storageService.saveBuffer({
-            mediaId,
-            mediaType,
-            extension: prepared.imagePreview.extension,
-            buffer: prepared.imagePreview.buffer,
-            variant: 'preview',
-          })
+          mediaId,
+          mediaType,
+          extension: prepared.imagePreview.extension,
+          buffer: prepared.imagePreview.buffer,
+          variant: 'preview',
+        })
         : undefined;
 
       const created = await this.mediaRepository.create({
@@ -684,7 +676,7 @@ export class MediaApplicationService {
         extension: prepared.extension,
         mimeType: prepared.file.mimetype,
         size: prepared.file.size,
-        sha256: item.sha256,
+        sha256,
         storageProvider: 'local',
         storageKey: storageResult.storageKey,
         imageMeta: prepared.imageMeta,
@@ -710,9 +702,58 @@ export class MediaApplicationService {
 
       this.metricsService.increment(`media.upload.${mediaType}`);
       const summary = this.toMediaSummary(created);
-      requestCache.set(item.sha256, summary);
+      requestCache.set(sha256, summary);
       return summary;
     });
+  }
+
+  private async mapUploadedFilesWithCleanup<TResult>(
+    files: UploadedBinaryFile[],
+    concurrency: number,
+    mapper: (file: UploadedBinaryFile, index: number) => Promise<TResult>,
+  ): Promise<TResult[]> {
+    if (files.length === 0) {
+      return [];
+    }
+
+    const limit = Math.max(1, Math.min(concurrency, files.length));
+    const results = new Array<TResult>(files.length);
+    const startedIndexes = new Set<number>();
+    let currentIndex = 0;
+    let firstError: unknown;
+
+    const worker = async (): Promise<void> => {
+      while (!firstError) {
+        const index = currentIndex;
+        currentIndex += 1;
+
+        if (index >= files.length) {
+          return;
+        }
+
+        startedIndexes.add(index);
+
+        try {
+          results[index] = await mapper(files[index], index);
+        } catch (error) {
+          firstError ??= error;
+          return;
+        } finally {
+          await this.cleanupUploadedFile(files[index]);
+        }
+      }
+    };
+
+    await Promise.all(Array.from({ length: limit }, () => worker()));
+    await Promise.all(
+      files.map((file, index) => startedIndexes.has(index) ? Promise.resolve() : this.cleanupUploadedFile(file)),
+    );
+
+    if (firstError) {
+      throw firstError;
+    }
+
+    return results;
   }
 
   private validateUploadedFile(mediaType: MediaType, file: UploadedBinaryFile): UploadedBinaryFile {
@@ -722,7 +763,7 @@ export class MediaApplicationService {
       mimetype: file?.mimetype,
     });
 
-    if (!file || !file.buffer || file.size <= 0) {
+    if (!file || (!file.buffer && !file.path) || file.size <= 0) {
       throw new BadRequestException('Uploaded file is empty');
     }
 
@@ -756,11 +797,19 @@ export class MediaApplicationService {
     });
 
     if (mediaType !== 'image') {
+      if (!file.buffer) {
+        throw new BadRequestException('Uploaded file is empty');
+      }
+
       return {
         file,
         extension: this.storageService.resolveExtension(file.originalname, file.mimetype),
         imageMeta: undefined,
       };
+    }
+
+    if (!file.buffer) {
+      throw new BadRequestException('Uploaded file is empty');
     }
 
     const parsedImage = parseImageBuffer(file.buffer, file.mimetype);
@@ -901,6 +950,32 @@ export class MediaApplicationService {
   private normalizeArchiveEntryName(entryName: string): string {
     const normalized = basename(entryName.replace(/\\/g, '/')).trim();
     return normalized || 'unnamed-file';
+  }
+
+  private async loadUploadedFileBuffer(file: UploadedBinaryFile): Promise<Buffer> {
+    if (file.buffer) {
+      return file.buffer;
+    }
+
+    if (!file.path) {
+      throw new BadRequestException('Uploaded file is empty');
+    }
+
+    return readFile(file.path);
+  }
+
+  private async cleanupUploadedFile(file: UploadedBinaryFile): Promise<void> {
+    if (!file.path) {
+      return;
+    }
+
+    try {
+      await rm(file.path, { force: true });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to remove upload temp file: ${file.path} ${error instanceof Error ? error.message : ''}`,
+      );
+    }
   }
 
   private normalizeArchiveDownloadName(fileName?: string): string {

@@ -871,6 +871,10 @@
 - 幂等：是
 - 表单字段：
   - `files[]`
+- 限制：
+  - 单文件大小由 `MEDIA_IMAGE_MAX_FILE_SIZE` 控制
+  - 单次文件数量由 `MEDIA_BATCH_UPLOAD_LIMIT` 控制
+- 说明：多图上传会先写入服务端临时目录，再按 `MEDIA_IO_CONCURRENCY` 受控并发处理
 
 ### `POST /media/audio/upload`
 - 鉴权：登录

@@ -10,6 +10,8 @@ import {
   type NestInterceptor,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { isMediaUploadDebugEnabled, maybeBreakMediaUpload } from '../utils/upload-debug.util';
 
 const multer = require('multer') as {
@@ -93,7 +95,13 @@ function createUploadMiddleware(
     ? configService.get<number>(options.filesConfigKey!, options.filesDefault!)
     : undefined;
 
+  const diskUploadOptions = options.kind === 'multiple'
+    ? {
+        dest: ensureUploadTempDir(),
+      }
+    : {};
   const middleware = multer({
+    ...diskUploadOptions,
     limits: {
       fileSize,
       ...(typeof maxCount === 'number' ? { files: maxCount } : {}),
@@ -103,6 +111,23 @@ function createUploadMiddleware(
   return options.kind === 'multiple'
     ? middleware.array(options.fieldName, maxCount)
     : middleware.single(options.fieldName);
+}
+
+function sumParsedFileSizes(request: {
+  file?: { size?: number };
+  files?: Array<{ size?: number }>;
+}): number {
+  if (Array.isArray(request.files)) {
+    return request.files.reduce((sum, file) => sum + (file.size ?? 0), 0);
+  }
+
+  return request.file?.size ?? 0;
+}
+
+function ensureUploadTempDir(): string {
+  const directory = join(process.cwd(), '.tmp-uploads');
+  mkdirSync(directory, { recursive: true });
+  return directory;
 }
 
 function buildConfiguredUploadInterceptor(options: UploadLimitOptions): Type<NestInterceptor> {
@@ -166,7 +191,7 @@ function buildConfiguredUploadInterceptor(options: UploadLimitOptions): Type<Nes
         url?: string;
         headers?: Record<string, string | string[] | undefined>;
         file?: { size?: number; mimetype?: string };
-        files?: Array<{ size?: number; mimetype?: string }>;
+        files?: Array<{ size?: number; mimetype?: string; path?: string }>;
       },
       fileSize: number,
       maxCount: number | undefined,
@@ -185,6 +210,8 @@ function buildConfiguredUploadInterceptor(options: UploadLimitOptions): Type<Nes
         configuredFileSize: fileSize,
         configuredMaxCount: maxCount,
         parsedFileCount: files.length || (request.file ? 1 : 0),
+        parsedTotalSize: sumParsedFileSizes(request),
+        parsedStorage: files.length > 0 ? files.map((file) => file.path ? 'disk' : 'memory') : request.file ? ['memory'] : [],
         parsedSizes: files.length > 0 ? files.map((file) => file.size ?? 0) : request.file ? [request.file.size ?? 0] : [],
         parsedMimeTypes: files.length > 0
           ? files.map((file) => file.mimetype ?? '')

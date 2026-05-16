@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
+import { rm } from 'node:fs/promises';
 import request = require('supertest');
 import { attachTraceId } from '../common/middleware/request-context.middleware';
 import { MediaApplicationService } from './application/media.application';
@@ -80,6 +81,7 @@ describe('MediaController uploads', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+    return rm('.tmp-uploads', { recursive: true, force: true });
   });
 
   afterAll(async () => {
@@ -100,6 +102,8 @@ describe('MediaController uploads', () => {
     expect(response.status).toBe(201);
     expect(mediaApplicationService.uploadImages).toHaveBeenCalledTimes(1);
     expect(mediaApplicationService.uploadImages.mock.calls[0][0]).toHaveLength(2);
+    expect(mediaApplicationService.uploadImages.mock.calls[0][0][0].path).toEqual(expect.any(String));
+    expect(mediaApplicationService.uploadImages.mock.calls[0][0][0].buffer).toBeUndefined();
     expect(mediaApplicationService.uploadImages.mock.calls[0][1]).toBe('user-1');
   });
 

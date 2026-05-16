@@ -2,5 +2,6 @@ export interface UploadedBinaryFile {
   originalname: string;
   mimetype: string;
   size: number;
-  buffer: Buffer;
+  buffer?: Buffer;
+  path?: string;
 }

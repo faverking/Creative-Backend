@@ -82,6 +82,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
         return ERROR_CODES.NOT_FOUND;
       case HttpStatus.CONFLICT:
         return ERROR_CODES.CONFLICT;
+      case HttpStatus.PAYLOAD_TOO_LARGE:
+        return ERROR_CODES.PAYLOAD_TOO_LARGE;
       case HttpStatus.TOO_MANY_REQUESTS:
         return ERROR_CODES.TOO_MANY_REQUESTS;
       default:
