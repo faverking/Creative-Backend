@@ -25,7 +25,7 @@ export class Article {
   @Prop({ type: [String], default: [] })
   images!: string[];
 
-  @Prop({ required: true, enum: [1, 2, 3], default: 1 })
+  @Prop({ required: true, enum: [1, 2, 3, 4], default: 1 })
   theme_id!: number;
 
   @Prop({ type: SchemaTypes.ObjectId, required: true, index: true })

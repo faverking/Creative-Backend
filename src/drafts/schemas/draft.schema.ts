@@ -10,7 +10,7 @@ export class Draft {
   @Prop({ type: SchemaTypes.ObjectId, required: true, index: true })
   user_id!: Types.ObjectId;
 
-  @Prop({ enum: [1, 2, 3], default: 1 })
+  @Prop({ enum: [1, 2, 3, 4], default: 1 })
   theme_id!: number;
 
   @Prop({ required: true })
