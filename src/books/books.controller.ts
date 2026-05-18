@@ -62,7 +62,12 @@ export class BooksController {
     @Query('cascadeMedia') cascadeMedia: string | undefined,
     @Req() req: Request,
   ) {
-    return this.booksApplicationService.deleteBook(id, user.userId, cascadeMedia === 'true', req.traceId);
+    return this.booksApplicationService.deleteBook(
+      id,
+      user.userId,
+      cascadeMedia === 'true',
+      req.traceId,
+    );
   }
 
   @Public()
@@ -73,17 +78,17 @@ export class BooksController {
 
   @Public()
   @Get(':id/related')
-  related(
-    @Param('id', ParseObjectIdPipe) id: string,
-    @Query() query: RelatedQueryDto,
-  ) {
+  related(@Param('id', ParseObjectIdPipe) id: string, @Query() query: RelatedQueryDto) {
     return this.searchService.related(TargetType.BOOK, id, query);
   }
 
   @Public()
   @Get(':id')
-  async getBookDetail(@Param('id', ParseObjectIdPipe) id: string, @OptionalCurrentUser() user?: JwtUser) {
-    const detail = await this.booksApplicationService.getBookDetail(id);
+  async getBookDetail(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @OptionalCurrentUser() user?: JwtUser,
+  ) {
+    const detail = await this.booksApplicationService.getBookDetail(id, user?.userId);
     this.workspaceVisitRecorderService.recordPublicDetailVisit(user?.userId, TargetType.BOOK, id);
 
     return detail;

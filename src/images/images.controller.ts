@@ -42,7 +42,10 @@ export class ImagesController {
   }
 
   @Get('me/:id')
-  getMyImagePackageDetail(@Param('id', ParseObjectIdPipe) id: string, @CurrentUser() user: JwtUser) {
+  getMyImagePackageDetail(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @CurrentUser() user: JwtUser,
+  ) {
     return this.imagesApplicationService.getMyImagePackageDetail(id, user.userId);
   }
 
@@ -65,7 +68,12 @@ export class ImagesController {
     @Query('cascadeMedia') cascadeMedia: string | undefined,
     @Req() req: Request,
   ) {
-    return this.imagesApplicationService.deleteImagePackage(id, user.userId, cascadeMedia === 'true', req.traceId);
+    return this.imagesApplicationService.deleteImagePackage(
+      id,
+      user.userId,
+      cascadeMedia === 'true',
+      req.traceId,
+    );
   }
 
   @Public()
@@ -76,17 +84,17 @@ export class ImagesController {
 
   @Public()
   @Get(':id/related')
-  related(
-    @Param('id', ParseObjectIdPipe) id: string,
-    @Query() query: RelatedQueryDto,
-  ) {
+  related(@Param('id', ParseObjectIdPipe) id: string, @Query() query: RelatedQueryDto) {
     return this.searchService.related(TargetType.IMAGE, id, query);
   }
 
   @Public()
   @Get(':id')
-  async getImagePackageDetail(@Param('id', ParseObjectIdPipe) id: string, @OptionalCurrentUser() user?: JwtUser) {
-    const detail = await this.imagesApplicationService.getImagePackageDetail(id);
+  async getImagePackageDetail(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @OptionalCurrentUser() user?: JwtUser,
+  ) {
+    const detail = await this.imagesApplicationService.getImagePackageDetail(id, user?.userId);
     this.workspaceVisitRecorderService.recordPublicDetailVisit(user?.userId, TargetType.IMAGE, id);
 
     return detail;

@@ -2,6 +2,53 @@ import { TargetType } from '../common/enums/target-type.enum';
 import { FavoritesService } from './favorites.service';
 
 describe('FavoritesService', () => {
+  it('resolves whether the current viewer has favorited a target', async () => {
+    const favoritesRepository = {
+      findOne: jest.fn().mockResolvedValue({ id: 'fav-1' }),
+    };
+    const service = new FavoritesService(
+      favoritesRepository as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      service.isFavorited(
+        '507f1f77bcf86cd799439012',
+        TargetType.ARTICLE,
+        '507f1f77bcf86cd799439011',
+      ),
+    ).resolves.toBe(true);
+
+    expect(favoritesRepository.findOne).toHaveBeenCalledWith({
+      user_id: expect.anything(),
+      target_type: TargetType.ARTICLE,
+      target_id: '507f1f77bcf86cd799439011',
+    });
+  });
+
+  it('treats anonymous viewers as not favorited without querying relations', async () => {
+    const favoritesRepository = {
+      findOne: jest.fn(),
+    };
+    const service = new FavoritesService(
+      favoritesRepository as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      service.isFavorited(undefined, TargetType.ARTICLE, '507f1f77bcf86cd799439011'),
+    ).resolves.toBe(false);
+    expect(favoritesRepository.findOne).not.toHaveBeenCalled();
+  });
+
   it('returns display-ready favorite items from workspace content summaries', async () => {
     const favoritesRepository = {
       list: jest.fn().mockResolvedValue({

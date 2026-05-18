@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Types } from 'mongoose';
+import { TargetType } from '../common/enums/target-type.enum';
 import { AuditService } from '../infra/audit/audit.service';
 import { MongoTransactionService } from '../infra/database/mongo-transaction.service';
 import { ContentOperationLockService } from '../infra/redis/content-operation-lock.service';
@@ -19,75 +20,115 @@ export class FavoritesService {
     private readonly workspaceContentService: WorkspaceContentService,
   ) {}
 
-  async toggle(userId: string, dto: ToggleFavoriteDto, traceId?: string, ip?: string, ua?: string) {
-    return this.contentOperationLockService.runWithContentLock(dto.targetType, dto.targetId, async () => {
-      const filter = {
-        user_id: new Types.ObjectId(userId),
-        target_type: dto.targetType,
-        target_id: dto.targetId,
-      };
+  async isFavorited(
+    userId: string | undefined,
+    targetType: TargetType,
+    targetId: string,
+  ): Promise<boolean> {
+    if (!userId) {
+      return false;
+    }
 
-      const removed = await this.mongoTransactionService.runInTransaction(async (session) => {
-        const deletedFavorite = await this.favoritesRepository.findOneAndDelete(filter, session);
-        if (!deletedFavorite) {
-          return null;
+    const favorite = await this.favoritesRepository.findOne({
+      user_id: new Types.ObjectId(userId),
+      target_type: targetType,
+      target_id: targetId,
+    });
+
+    return Boolean(favorite);
+  }
+
+  async toggle(userId: string, dto: ToggleFavoriteDto, traceId?: string, ip?: string, ua?: string) {
+    return this.contentOperationLockService.runWithContentLock(
+      dto.targetType,
+      dto.targetId,
+      async () => {
+        const filter = {
+          user_id: new Types.ObjectId(userId),
+          target_type: dto.targetType,
+          target_id: dto.targetId,
+        };
+
+        const removed = await this.mongoTransactionService.runInTransaction(async (session) => {
+          const deletedFavorite = await this.favoritesRepository.findOneAndDelete(filter, session);
+          if (!deletedFavorite) {
+            return null;
+          }
+
+          const count = await this.favoritesRepository.countByTarget(
+            dto.targetType,
+            dto.targetId,
+            session,
+          );
+          await this.interactionsService.setFavorCountStrict(
+            dto.targetType,
+            dto.targetId,
+            count,
+            session,
+          );
+          return deletedFavorite;
+        });
+
+        if (removed) {
+          this.auditService.recordEventually({
+            operatorId: userId,
+            action: 'favorite.cancel',
+            resourceType: dto.targetType,
+            resourceId: dto.targetId,
+            ip,
+            ua,
+            traceId,
+          });
+          return {
+            favored: false,
+            targetType: dto.targetType,
+            targetId: dto.targetId,
+          };
         }
 
-        const count = await this.favoritesRepository.countByTarget(dto.targetType, dto.targetId, session);
-        await this.interactionsService.setFavorCountStrict(dto.targetType, dto.targetId, count, session);
-        return deletedFavorite;
-      });
+        await this.interactionsService.assertTargetExists(dto.targetType, dto.targetId);
 
-      if (removed) {
+        const created = await this.mongoTransactionService.runInTransaction(async (session) => {
+          const createdFavorite = await this.favoritesRepository.create(
+            {
+              user_id: new Types.ObjectId(userId),
+              target_type: dto.targetType,
+              target_id: dto.targetId,
+            },
+            session,
+          );
+          const count = await this.favoritesRepository.countByTarget(
+            dto.targetType,
+            dto.targetId,
+            session,
+          );
+          await this.interactionsService.setFavorCountStrict(
+            dto.targetType,
+            dto.targetId,
+            count,
+            session,
+          );
+          return createdFavorite;
+        });
+
         this.auditService.recordEventually({
           operatorId: userId,
-          action: 'favorite.cancel',
+          action: 'favorite.create',
           resourceType: dto.targetType,
           resourceId: dto.targetId,
           ip,
           ua,
           traceId,
         });
+
         return {
-          favored: false,
+          favored: true,
+          favoriteId: created.id,
           targetType: dto.targetType,
           targetId: dto.targetId,
         };
-      }
-
-      await this.interactionsService.assertTargetExists(dto.targetType, dto.targetId);
-
-      const created = await this.mongoTransactionService.runInTransaction(async (session) => {
-        const createdFavorite = await this.favoritesRepository.create(
-          {
-            user_id: new Types.ObjectId(userId),
-            target_type: dto.targetType,
-            target_id: dto.targetId,
-          },
-          session,
-        );
-        const count = await this.favoritesRepository.countByTarget(dto.targetType, dto.targetId, session);
-        await this.interactionsService.setFavorCountStrict(dto.targetType, dto.targetId, count, session);
-        return createdFavorite;
-      });
-
-      this.auditService.recordEventually({
-        operatorId: userId,
-        action: 'favorite.create',
-        resourceType: dto.targetType,
-        resourceId: dto.targetId,
-        ip,
-        ua,
-        traceId,
-      });
-
-      return {
-        favored: true,
-        favoriteId: created.id,
-        targetType: dto.targetType,
-        targetId: dto.targetId,
-      };
-    });
+      },
+    );
   }
 
   async listMyFavorites(userId: string, query: QueryMyFavoritesDto) {

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { FavoritesModule } from '../favorites/favorites.module';
 import { MediaModule } from '../media/media.module';
 import { SearchModule } from '../search/search.module';
 import { UsersModule } from '../users/users.module';
@@ -16,6 +17,7 @@ import { Topic, TopicSchema } from './schemas/topic.schema';
     SearchModule,
     WorkspaceActivityModule,
     UsersModule,
+    FavoritesModule,
     WorkspaceRelationsModule,
     MongooseModule.forFeature([
       {

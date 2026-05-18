@@ -1,4 +1,9 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Types } from 'mongoose';
 import { type MediaVariant } from '../../common/constants/content-query.constants';
 import { ReviewStatus } from '../../common/enums/review-status.enum';
@@ -11,7 +16,10 @@ import {
   toCompactUserIdentity,
 } from '../../common/utils/content-presentation.util';
 import { buildShanghaiDateRangeFilter } from '../../common/utils/date-range.util';
-import { buildKeywordSearchFilter, buildKeywordSearchTerms } from '../../common/utils/keyword-search.util';
+import {
+  buildKeywordSearchFilter,
+  buildKeywordSearchTerms,
+} from '../../common/utils/keyword-search.util';
 import { buildStartsWithRegex } from '../../common/utils/regex.util';
 import { buildApprovedPublicFilter } from '../../common/utils/public-content-filter.util';
 import {
@@ -21,10 +29,15 @@ import {
   type MediaReferenceInput,
 } from '../../common/utils/media-reference.util';
 import { buildImagePackageMeta } from '../../common/utils/image-package-meta.util';
-import { pickMediaPath, type ResolvedMediaAssetMode, type ResolvedMediaAsset } from '../../common/utils/media-summary.util';
+import {
+  pickMediaPath,
+  type ResolvedMediaAssetMode,
+  type ResolvedMediaAsset,
+} from '../../common/utils/media-summary.util';
 import { AuditService } from '../../infra/audit/audit.service';
 import { MongoTransactionService } from '../../infra/database/mongo-transaction.service';
 import { ContentOperationLockService } from '../../infra/redis/content-operation-lock.service';
+import { FavoritesService } from '../../favorites/favorites.service';
 import {
   MediaApplicationService,
   type ImageMediaPresentation,
@@ -66,6 +79,7 @@ export class ImagesApplicationService {
     private readonly mongoTransactionService: MongoTransactionService,
     private readonly contentOperationLockService: ContentOperationLockService,
     private readonly usersService: UsersService,
+    private readonly favoritesService: FavoritesService,
     private readonly workspaceRelationCleanupService: WorkspaceRelationCleanupService,
   ) {}
 
@@ -105,7 +119,9 @@ export class ImagesApplicationService {
 
     return this.toEditableDetail(
       created,
-      await this.createImagePresentationMap(collectMediaReferenceIds(created.images, [created.cover])),
+      await this.createImagePresentationMap(
+        collectMediaReferenceIds(created.images, [created.cover]),
+      ),
     );
   }
 
@@ -122,7 +138,12 @@ export class ImagesApplicationService {
     }
     Object.assign(filter, buildKeywordSearchFilter(query.keyword));
 
-    const { items, total } = await this.imagesRepository.list(filter, page, limit, this.resolveListSort(query.sort));
+    const { items, total } = await this.imagesRepository.list(
+      filter,
+      page,
+      limit,
+      this.resolveListSort(query.sort),
+    );
     const mediaMap = await this.createImagePresentationMap(
       items.flatMap((item) => collectMediaReferenceIds(item.images, [item.cover])),
     );
@@ -143,9 +164,10 @@ export class ImagesApplicationService {
     );
     const mediaMap = await this.createImagePresentationMap(
       items.flatMap((item) =>
-        collectMediaReferenceIds(normalizeMediaReferenceIds(item.images).slice(0, HOME_GALLERY_PREVIEW_LIMIT), [
-          item.cover,
-        ]),
+        collectMediaReferenceIds(
+          normalizeMediaReferenceIds(item.images).slice(0, HOME_GALLERY_PREVIEW_LIMIT),
+          [item.cover],
+        ),
       ),
     );
 
@@ -184,7 +206,7 @@ export class ImagesApplicationService {
     };
   }
 
-  async getImagePackageDetail(id: string): Promise<unknown> {
+  async getImagePackageDetail(id: string, viewerUserId?: string): Promise<unknown> {
     const imagePackage = await this.imagesRepository.findOneAndIncrementViewCount({
       _id: id,
       ...buildApprovedPublicFilter(),
@@ -193,12 +215,23 @@ export class ImagesApplicationService {
       throw new NotFoundException('Image package not found');
     }
 
-    const [mediaMap, authorMap] = await Promise.all([
-      this.createImagePresentationMap(collectMediaReferenceIds(imagePackage.images, [imagePackage.cover])),
+    const [mediaMap, authorMap, favored] = await Promise.all([
+      this.createImagePresentationMap(
+        collectMediaReferenceIds(imagePackage.images, [imagePackage.cover]),
+      ),
       this.usersService.getSafeProfileMap([imagePackage.user_id.toString()]),
+      this.favoritesService.isFavorited(viewerUserId, TargetType.IMAGE, id),
     ]);
 
-    return this.toPublicDetail(imagePackage, mediaMap, 'download', authorMap.get(imagePackage.user_id.toString()));
+    return {
+      ...this.toPublicDetail(
+        imagePackage,
+        mediaMap,
+        'download',
+        authorMap.get(imagePackage.user_id.toString()),
+      ),
+      favored,
+    };
   }
 
   async getMyImagePackageDetail(id: string, userId: string): Promise<unknown> {
@@ -213,7 +246,9 @@ export class ImagesApplicationService {
 
     return this.toEditableDetail(
       imagePackage,
-      await this.createImagePresentationMap(collectMediaReferenceIds(imagePackage.images, [imagePackage.cover])),
+      await this.createImagePresentationMap(
+        collectMediaReferenceIds(imagePackage.images, [imagePackage.cover]),
+      ),
     );
   }
 
@@ -276,7 +311,9 @@ export class ImagesApplicationService {
 
       return this.toEditableDetail(
         updated,
-        await this.createImagePresentationMap(collectMediaReferenceIds(updated.images, [updated.cover])),
+        await this.createImagePresentationMap(
+          collectMediaReferenceIds(updated.images, [updated.cover]),
+        ),
       );
     });
   }
@@ -300,10 +337,16 @@ export class ImagesApplicationService {
       const linkedMediaIds = collectMediaReferenceIds(imagePackage.images, [imagePackage.cover]);
       const result = await this.mongoTransactionService.runInTransaction(async (session) => {
         await this.imagesRepository.deleteById(id, session);
-        return this.workspaceRelationCleanupService.cleanupDeletedTarget(TargetType.IMAGE, id, session);
+        return this.workspaceRelationCleanupService.cleanupDeletedTarget(
+          TargetType.IMAGE,
+          id,
+          session,
+        );
       });
 
-      let mediaCleanup: { deletedIds: string[]; skipped: Array<{ id: string; reason: string }> } | undefined;
+      let mediaCleanup:
+        | { deletedIds: string[]; skipped: Array<{ id: string; reason: string }> }
+        | undefined;
       if (cascadeMedia) {
         mediaCleanup = await this.mediaApplicationService.deleteOwnedImagesIfUnreferenced(
           linkedMediaIds,
@@ -402,11 +445,10 @@ export class ImagesApplicationService {
       normalizeMediaReferenceIds(item.images).slice(0, HOME_GALLERY_PREVIEW_LIMIT),
       mediaMap,
       'compact',
-    )
-      .map((media) => ({
-        previewPath: media.previewPath,
-        downloadPath: media.downloadPath,
-      }));
+    ).map((media) => ({
+      previewPath: media.previewPath,
+      downloadPath: media.downloadPath,
+    }));
     const coverPresentation = this.resolveCoverPresentation(item, mediaMap);
 
     return {
@@ -470,7 +512,8 @@ export class ImagesApplicationService {
     author?: UserSafeProfile,
   ) {
     const fullImageAssets = this.mapImageAssets(imagePackage.images, mediaMap, 'full');
-    const fullCoverMedia = this.mapSingleImageAsset(imagePackage.cover, mediaMap, 'full') ?? fullImageAssets[0];
+    const fullCoverMedia =
+      this.mapSingleImageAsset(imagePackage.cover, mediaMap, 'full') ?? fullImageAssets[0];
     return {
       ...this.toListItem(imagePackage, mediaMap, mediaVariant, author),
       imageAssets: fullImageAssets,
@@ -492,9 +535,3 @@ export class ImagesApplicationService {
     };
   }
 }
-
-
-
-
-
-

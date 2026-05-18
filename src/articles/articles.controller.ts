@@ -72,18 +72,19 @@ export class ArticlesController {
 
   @Public()
   @Get(':id/related')
-  related(
-    @Param('id', ParseObjectIdPipe) id: string,
-    @Query() query: RelatedQueryDto,
-  ) {
+  related(@Param('id', ParseObjectIdPipe) id: string, @Query() query: RelatedQueryDto) {
     return this.searchService.related(TargetType.ARTICLE, id, query);
   }
 
   @Public()
   @Get(':id')
   async detail(@Param('id', ParseObjectIdPipe) id: string, @OptionalCurrentUser() user?: JwtUser) {
-    const detail = await this.articlesService.detail(id);
-    this.workspaceVisitRecorderService.recordPublicDetailVisit(user?.userId, TargetType.ARTICLE, id);
+    const detail = await this.articlesService.detail(id, user?.userId);
+    this.workspaceVisitRecorderService.recordPublicDetailVisit(
+      user?.userId,
+      TargetType.ARTICLE,
+      id,
+    );
 
     return detail;
   }

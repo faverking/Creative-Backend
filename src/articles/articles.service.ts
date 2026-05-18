@@ -1,4 +1,9 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Types } from 'mongoose';
 import { ContentStatus } from '../common/enums/content-status.enum';
 import { TargetType } from '../common/enums/target-type.enum';
@@ -10,7 +15,10 @@ import {
   pickFirstMediaReferenceId,
   type MediaReferenceInput,
 } from '../common/utils/media-reference.util';
-import { buildKeywordSearchFilter, buildKeywordSearchTerms } from '../common/utils/keyword-search.util';
+import {
+  buildKeywordSearchFilter,
+  buildKeywordSearchTerms,
+} from '../common/utils/keyword-search.util';
 import {
   mapPrimaryReferencedMediaAsset,
   mapReferencedMediaAssets,
@@ -24,6 +32,7 @@ import {
 } from '../common/utils/media-summary.util';
 import { MongoTransactionService } from '../infra/database/mongo-transaction.service';
 import { ContentOperationLockService } from '../infra/redis/content-operation-lock.service';
+import { FavoritesService } from '../favorites/favorites.service';
 import { MediaApplicationService, type MediaSummary } from '../media/application/media.application';
 import { UsersService, type UserSafeProfile } from '../users/users.service';
 import { WorkspaceRelationCleanupService } from '../workspace/workspace-relation-cleanup.service';
@@ -51,6 +60,7 @@ export class ArticlesService {
     private readonly mongoTransactionService: MongoTransactionService,
     private readonly contentOperationLockService: ContentOperationLockService,
     private readonly usersService: UsersService,
+    private readonly favoritesService: FavoritesService,
     private readonly workspaceRelationCleanupService: WorkspaceRelationCleanupService,
   ) {}
 
@@ -75,7 +85,10 @@ export class ArticlesService {
       reply_count: 0,
     });
 
-    return this.toEditableDetail(article, await this.createMediaSummaryMap(normalizeMediaReferenceIds(article.images)));
+    return this.toEditableDetail(
+      article,
+      await this.createMediaSummaryMap(normalizeMediaReferenceIds(article.images)),
+    );
   }
 
   async list(query: QueryArticlesDto) {
@@ -95,7 +108,12 @@ export class ArticlesService {
     }
     Object.assign(condition, buildKeywordSearchFilter(query.keyword));
 
-    const { items, total } = await this.articlesRepository.list(condition, page, limit, this.resolveListSort(query.sort));
+    const { items, total } = await this.articlesRepository.list(
+      condition,
+      page,
+      limit,
+      this.resolveListSort(query.sort),
+    );
     const mediaMap = await this.createMediaSummaryMap(
       items.flatMap((item) => normalizeMediaReferenceIds(item.images)),
     );
@@ -104,7 +122,9 @@ export class ArticlesService {
       : new Map<string, UserSafeProfile>();
 
     return {
-      items: items.map((item) => this.toListItem(item, mediaMap, authorMap.get(item.user_id.toString()))),
+      items: items.map((item) =>
+        this.toListItem(item, mediaMap, authorMap.get(item.user_id.toString())),
+      ),
       page,
       limit,
       total,
@@ -162,7 +182,7 @@ export class ArticlesService {
     };
   }
 
-  async detail(id: string) {
+  async detail(id: string, viewerUserId?: string) {
     const article = await this.articlesRepository.findOneAndIncrementViewCount({
       _id: id,
       ...buildPublicArticleFilter(),
@@ -172,18 +192,25 @@ export class ArticlesService {
       throw new NotFoundException('Article not found');
     }
 
-    const [mediaMap, authorMap] = await Promise.all([
+    const [mediaMap, authorMap, favored] = await Promise.all([
       this.createMediaSummaryMap(normalizeMediaReferenceIds(article.images)),
       this.usersService.getSafeProfileMap([article.user_id.toString()]),
+      this.favoritesService.isFavorited(viewerUserId, TargetType.ARTICLE, id),
     ]);
 
-    return this.toPublicDetail(article, mediaMap, authorMap.get(article.user_id.toString()));
+    return {
+      ...this.toPublicDetail(article, mediaMap, authorMap.get(article.user_id.toString())),
+      favored,
+    };
   }
 
   async detailMine(id: string, userId: string) {
     const article = await this.requireOwnedArticle(id, userId);
 
-    return this.toEditableDetail(article, await this.createMediaSummaryMap(normalizeMediaReferenceIds(article.images)));
+    return this.toEditableDetail(
+      article,
+      await this.createMediaSummaryMap(normalizeMediaReferenceIds(article.images)),
+    );
   }
 
   async update(id: string, userId: string, dto: UpdateArticleDto) {
@@ -211,7 +238,10 @@ export class ArticlesService {
         throw new NotFoundException('Article not found');
       }
 
-      return this.toEditableDetail(updated, await this.createMediaSummaryMap(normalizeMediaReferenceIds(updated.images)));
+      return this.toEditableDetail(
+        updated,
+        await this.createMediaSummaryMap(normalizeMediaReferenceIds(updated.images)),
+      );
     });
   }
 
@@ -233,7 +263,12 @@ export class ArticlesService {
 
       if (!options.physicalDelete) {
         await this.mongoTransactionService.runInTransaction(async (session) => {
-          await this.workspaceRelationCleanupService.cleanupHiddenTarget(TargetType.ARTICLE, id, userId, session);
+          await this.workspaceRelationCleanupService.cleanupHiddenTarget(
+            TargetType.ARTICLE,
+            id,
+            userId,
+            session,
+          );
           if (!article.deleted_at) {
             await this.articlesRepository.softDeleteById(id, new Date(), session);
           }
@@ -252,10 +287,16 @@ export class ArticlesService {
           throw new NotFoundException('Article not found');
         }
 
-        return this.workspaceRelationCleanupService.cleanupDeletedTarget(TargetType.ARTICLE, id, session);
+        return this.workspaceRelationCleanupService.cleanupDeletedTarget(
+          TargetType.ARTICLE,
+          id,
+          session,
+        );
       });
 
-      let mediaCleanup: { deletedIds: string[]; skipped: Array<{ id: string; reason: string }> } | undefined;
+      let mediaCleanup:
+        | { deletedIds: string[]; skipped: Array<{ id: string; reason: string }> }
+        | undefined;
       if (options.cascadeMedia) {
         mediaCleanup = await this.mediaApplicationService.deleteOwnedImagesIfUnreferenced(
           linkedMediaIds,
@@ -273,7 +314,11 @@ export class ArticlesService {
     });
   }
 
-  private async requireOwnedArticle(id: string, userId: string, includeDeleted = false): Promise<ArticleDocument> {
+  private async requireOwnedArticle(
+    id: string,
+    userId: string,
+    includeDeleted = false,
+  ): Promise<ArticleDocument> {
     const article = await this.articlesRepository.findById(id);
     if (!article || (!includeDeleted && article.deleted_at)) {
       throw new NotFoundException('Article not found');
@@ -330,10 +375,7 @@ export class ArticlesService {
     return mapPrimaryReferencedMediaAsset(mediaIds, mediaMap, mode);
   }
 
-  private toHomeItem(
-    item: ArticleDocument,
-    mediaMap: Map<string, MediaSummary>,
-  ): HomeArticleItem {
+  private toHomeItem(item: ArticleDocument, mediaMap: Map<string, MediaSummary>): HomeArticleItem {
     return {
       id: item.id,
       title: item.title,
@@ -394,14 +436,10 @@ export class ArticlesService {
     };
   }
 
-  private toEditableDetail(
-    article: ArticleDocument,
-    mediaMap: Map<string, MediaSummary>,
-  ) {
+  private toEditableDetail(article: ArticleDocument, mediaMap: Map<string, MediaSummary>) {
     return {
       ...this.toPublicDetail(article, mediaMap),
       imageMediaIds: normalizeMediaReferenceIds(article.images),
     };
   }
 }
-

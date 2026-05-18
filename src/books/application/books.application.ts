@@ -1,4 +1,9 @@
-﻿import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+﻿import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Types } from 'mongoose';
 import { type MediaVariant } from '../../common/constants/content-query.constants';
 import { ReviewStatus } from '../../common/enums/review-status.enum';
@@ -7,7 +12,10 @@ import { Visibility } from '../../common/enums/visibility.enum';
 import { buildBookCompositeTags } from '../../common/utils/content-tag.util';
 import { mapSingleReferencedMediaAsset } from '../../common/utils/content-presentation.util';
 import { buildShanghaiDateRangeFilter } from '../../common/utils/date-range.util';
-import { buildKeywordSearchFilter, buildKeywordSearchTerms } from '../../common/utils/keyword-search.util';
+import {
+  buildKeywordSearchFilter,
+  buildKeywordSearchTerms,
+} from '../../common/utils/keyword-search.util';
 import { extractMediaReferenceId } from '../../common/utils/media-reference.util';
 import { buildStartsWithRegex } from '../../common/utils/regex.util';
 import { buildApprovedPublicFilter } from '../../common/utils/public-content-filter.util';
@@ -19,10 +27,20 @@ import {
 import { AuditService } from '../../infra/audit/audit.service';
 import { MongoTransactionService } from '../../infra/database/mongo-transaction.service';
 import { ContentOperationLockService } from '../../infra/redis/content-operation-lock.service';
-import { MediaApplicationService, type MediaSummary } from '../../media/application/media.application';
+import { FavoritesService } from '../../favorites/favorites.service';
+import {
+  MediaApplicationService,
+  type MediaSummary,
+} from '../../media/application/media.application';
 import { WorkspaceRelationCleanupService } from '../../workspace/workspace-relation-cleanup.service';
 import { BooksDomainService } from '../domain/books.domain.service';
-import { CreateBookDto, QueryBooksDto, QueryMyBooksDto, UpdateBookDto, UpsertBookChaptersDto } from '../dto/book.dto';
+import {
+  CreateBookDto,
+  QueryBooksDto,
+  QueryMyBooksDto,
+  UpdateBookDto,
+  UpsertBookChaptersDto,
+} from '../dto/book.dto';
 import { BooksRepository } from '../repositories/books.repository';
 import type { BookDetailDocument } from '../schemas/book.schema';
 
@@ -46,6 +64,7 @@ export class BooksApplicationService {
     private readonly mediaApplicationService: MediaApplicationService,
     private readonly mongoTransactionService: MongoTransactionService,
     private readonly contentOperationLockService: ContentOperationLockService,
+    private readonly favoritesService: FavoritesService,
     private readonly workspaceRelationCleanupService: WorkspaceRelationCleanupService,
   ) {}
 
@@ -164,7 +183,9 @@ export class BooksApplicationService {
     if (createTimeRange) {
       filter.create_time = createTimeRange;
     }
-    const { items, total } = await this.booksRepository.listBookDetails(filter, page, limit, { create_time: -1 });
+    const { items, total } = await this.booksRepository.listBookDetails(filter, page, limit, {
+      create_time: -1,
+    });
     const mediaMap = await this.createMediaSummaryMap(items.map((item) => item.cover));
 
     return {
@@ -175,7 +196,7 @@ export class BooksApplicationService {
     };
   }
 
-  async getBookDetail(bookId: string): Promise<unknown> {
+  async getBookDetail(bookId: string, viewerUserId?: string): Promise<unknown> {
     const detail = await this.booksRepository.findOneAndIncrementViewCount({
       _id: bookId,
       ...buildApprovedPublicFilter(),
@@ -184,11 +205,15 @@ export class BooksApplicationService {
       throw new NotFoundException('Book not found');
     }
 
-    const chapter = await this.booksRepository.findChapterByBookId(bookId);
-    const mediaMap = await this.createMediaSummaryMap([detail.cover]);
+    const [chapter, mediaMap, favored] = await Promise.all([
+      this.booksRepository.findChapterByBookId(bookId),
+      this.createMediaSummaryMap([detail.cover]),
+      this.favoritesService.isFavorited(viewerUserId, TargetType.BOOK, bookId),
+    ]);
 
     return {
       ...this.toPublicDetail(detail, mediaMap),
+      favored,
       chapterList: chapter?.chapter_list ?? [],
       origin: chapter?.origin,
       comicId: chapter?.comic_id ?? '',
@@ -226,79 +251,86 @@ export class BooksApplicationService {
     operatorId: string,
     traceId?: string,
   ): Promise<unknown> {
-    return this.contentOperationLockService.runWithContentLock(TargetType.BOOK, bookId, async () => {
-      const detail = await this.booksRepository.findBookDetailById(bookId);
-      if (!detail) {
-        throw new NotFoundException('Book not found');
-      }
-
-      if (detail.user_id.toString() !== operatorId) {
-        throw new ForbiddenException('No permission to update this book');
-      }
-
-      let normalizedCover = detail.cover;
-      if (typeof dto.cover === 'string') {
-        normalizedCover = extractMediaReferenceId(dto.cover) ?? '';
-        if (!normalizedCover) {
-          throw new BadRequestException('Book cover is invalid');
+    return this.contentOperationLockService.runWithContentLock(
+      TargetType.BOOK,
+      bookId,
+      async () => {
+        const detail = await this.booksRepository.findBookDetailById(bookId);
+        if (!detail) {
+          throw new NotFoundException('Book not found');
         }
-        await this.mediaApplicationService.assertMediaIdsExist([normalizedCover], 'image');
-      }
 
-      const payload: Record<string, unknown> = {};
-      if (dto.author) payload.author = dto.author;
-      if (typeof dto.part === 'number') payload.part = dto.part;
-      if (dto.style) payload.style = this.booksDomainService.normalizeStyles(dto.style);
-      if (typeof dto.status === 'number') payload.status = dto.status;
-      if (typeof dto.area === 'number') payload.area = dto.area;
-      if (typeof dto.name === 'string') payload.name = dto.name;
-      if (typeof dto.cover === 'string') payload.cover = normalizedCover;
-      if (typeof dto.desc === 'string') payload.desc = dto.desc;
-      if (typeof dto.releaseTime === 'number') payload.release_time = dto.releaseTime;
-      payload.search_terms = buildKeywordSearchTerms(
-        typeof dto.name === 'string' ? dto.name : detail.name,
-        typeof dto.desc === 'string' ? dto.desc : detail.desc,
-      );
+        if (detail.user_id.toString() !== operatorId) {
+          throw new ForbiddenException('No permission to update this book');
+        }
 
-      const updated = await this.booksRepository.updateBookDetailById(bookId, payload);
-      if (!updated) {
-        throw new NotFoundException('Book not found');
-      }
+        let normalizedCover = detail.cover;
+        if (typeof dto.cover === 'string') {
+          normalizedCover = extractMediaReferenceId(dto.cover) ?? '';
+          if (!normalizedCover) {
+            throw new BadRequestException('Book cover is invalid');
+          }
+          await this.mediaApplicationService.assertMediaIdsExist([normalizedCover], 'image');
+        }
 
-      if (Array.isArray(dto.chapterList)) {
-        const chapterPayload = this.booksDomainService.buildChapterPayload({
-          chapterList: dto.chapterList,
+        const payload: Record<string, unknown> = {};
+        if (dto.author) payload.author = dto.author;
+        if (typeof dto.part === 'number') payload.part = dto.part;
+        if (dto.style) payload.style = this.booksDomainService.normalizeStyles(dto.style);
+        if (typeof dto.status === 'number') payload.status = dto.status;
+        if (typeof dto.area === 'number') payload.area = dto.area;
+        if (typeof dto.name === 'string') payload.name = dto.name;
+        if (typeof dto.cover === 'string') payload.cover = normalizedCover;
+        if (typeof dto.desc === 'string') payload.desc = dto.desc;
+        if (typeof dto.releaseTime === 'number') payload.release_time = dto.releaseTime;
+        payload.search_terms = buildKeywordSearchTerms(
+          typeof dto.name === 'string' ? dto.name : detail.name,
+          typeof dto.desc === 'string' ? dto.desc : detail.desc,
+        );
+
+        const updated = await this.booksRepository.updateBookDetailById(bookId, payload);
+        if (!updated) {
+          throw new NotFoundException('Book not found');
+        }
+
+        if (Array.isArray(dto.chapterList)) {
+          const chapterPayload = this.booksDomainService.buildChapterPayload({
+            chapterList: dto.chapterList,
+          });
+          await this.booksRepository.upsertChapter(bookId, chapterPayload);
+          await this.booksRepository.updateBookTotal(
+            bookId,
+            this.booksDomainService.getChapterTotal(dto.chapterList),
+          );
+        }
+
+        this.auditService.recordEventually({
+          operatorId,
+          action: 'book.update',
+          resourceType: 'book',
+          resourceId: bookId,
+          traceId,
         });
-        await this.booksRepository.upsertChapter(bookId, chapterPayload);
-        await this.booksRepository.updateBookTotal(bookId, this.booksDomainService.getChapterTotal(dto.chapterList));
-      }
 
-      this.auditService.recordEventually({
-        operatorId,
-        action: 'book.update',
-        resourceType: 'book',
-        resourceId: bookId,
-        traceId,
-      });
+        const latestDetail = Array.isArray(dto.chapterList)
+          ? await this.booksRepository.findBookDetailById(bookId)
+          : updated;
+        if (!latestDetail) {
+          throw new NotFoundException('Book not found');
+        }
 
-      const latestDetail = Array.isArray(dto.chapterList)
-        ? await this.booksRepository.findBookDetailById(bookId)
-        : updated;
-      if (!latestDetail) {
-        throw new NotFoundException('Book not found');
-      }
-
-      const chapter = await this.booksRepository.findChapterByBookId(bookId);
-      const mediaMap = await this.createMediaSummaryMap([latestDetail.cover]);
-      return {
-        ...this.toEditableDetail(latestDetail, mediaMap),
-        chapterList: chapter?.chapter_list ?? [],
-        origin: chapter?.origin,
-        comicId: chapter?.comic_id ?? '',
-        novelId: chapter?.novel_id ?? '',
-        otherId: chapter?.other_id ?? '',
-      };
-    });
+        const chapter = await this.booksRepository.findChapterByBookId(bookId);
+        const mediaMap = await this.createMediaSummaryMap([latestDetail.cover]);
+        return {
+          ...this.toEditableDetail(latestDetail, mediaMap),
+          chapterList: chapter?.chapter_list ?? [],
+          origin: chapter?.origin,
+          comicId: chapter?.comic_id ?? '',
+          novelId: chapter?.novel_id ?? '',
+          otherId: chapter?.other_id ?? '',
+        };
+      },
+    );
   }
 
   async deleteBook(
@@ -307,45 +339,55 @@ export class BooksApplicationService {
     cascadeMedia = false,
     traceId?: string,
   ): Promise<unknown> {
-    return this.contentOperationLockService.runWithContentLock(TargetType.BOOK, bookId, async () => {
-      const detail = await this.booksRepository.findBookDetailById(bookId);
-      if (!detail) {
-        throw new NotFoundException('Book not found');
-      }
+    return this.contentOperationLockService.runWithContentLock(
+      TargetType.BOOK,
+      bookId,
+      async () => {
+        const detail = await this.booksRepository.findBookDetailById(bookId);
+        if (!detail) {
+          throw new NotFoundException('Book not found');
+        }
 
-      if (detail.user_id.toString() !== operatorId) {
-        throw new ForbiddenException('No permission to delete this book');
-      }
+        if (detail.user_id.toString() !== operatorId) {
+          throw new ForbiddenException('No permission to delete this book');
+        }
 
-      const linkedMediaIds = detail.cover ? [detail.cover] : [];
-      const result = await this.mongoTransactionService.runInTransaction(async (session) => {
-        await this.booksRepository.deleteBookById(bookId, session);
-        return this.workspaceRelationCleanupService.cleanupDeletedTarget(TargetType.BOOK, bookId, session);
-      });
+        const linkedMediaIds = detail.cover ? [detail.cover] : [];
+        const result = await this.mongoTransactionService.runInTransaction(async (session) => {
+          await this.booksRepository.deleteBookById(bookId, session);
+          return this.workspaceRelationCleanupService.cleanupDeletedTarget(
+            TargetType.BOOK,
+            bookId,
+            session,
+          );
+        });
 
-      let mediaCleanup: { deletedIds: string[]; skipped: Array<{ id: string; reason: string }> } | undefined;
-      if (cascadeMedia) {
-        mediaCleanup = await this.mediaApplicationService.deleteOwnedImagesIfUnreferenced(
-          linkedMediaIds,
+        let mediaCleanup:
+          | { deletedIds: string[]; skipped: Array<{ id: string; reason: string }> }
+          | undefined;
+        if (cascadeMedia) {
+          mediaCleanup = await this.mediaApplicationService.deleteOwnedImagesIfUnreferenced(
+            linkedMediaIds,
+            operatorId,
+            traceId,
+          );
+        }
+
+        this.auditService.recordEventually({
           operatorId,
+          action: 'book.delete',
+          resourceType: 'book',
+          resourceId: bookId,
           traceId,
-        );
-      }
+        });
 
-      this.auditService.recordEventually({
-        operatorId,
-        action: 'book.delete',
-        resourceType: 'book',
-        resourceId: bookId,
-        traceId,
-      });
-
-      return {
-        success: true,
-        ...result,
-        mediaCleanup,
-      };
-    });
+        return {
+          success: true,
+          ...result,
+          mediaCleanup,
+        };
+      },
+    );
   }
 
   async upsertBookChapters(
@@ -354,42 +396,46 @@ export class BooksApplicationService {
     operatorId?: string,
     traceId?: string,
   ): Promise<unknown> {
-    return this.contentOperationLockService.runWithContentLock(TargetType.BOOK, bookId, async () => {
-      const detail = await this.booksRepository.findBookDetailById(bookId);
-      if (!detail) {
-        throw new NotFoundException('Book not found');
-      }
+    return this.contentOperationLockService.runWithContentLock(
+      TargetType.BOOK,
+      bookId,
+      async () => {
+        const detail = await this.booksRepository.findBookDetailById(bookId);
+        if (!detail) {
+          throw new NotFoundException('Book not found');
+        }
 
-      if (operatorId && detail.user_id.toString() !== operatorId) {
-        throw new ForbiddenException('No permission to update this book');
-      }
+        if (operatorId && detail.user_id.toString() !== operatorId) {
+          throw new ForbiddenException('No permission to update this book');
+        }
 
-      const payload = this.booksDomainService.buildChapterPayload(dto);
-      const chapter = await this.booksRepository.upsertChapter(bookId, payload);
-      const total = this.booksDomainService.getChapterTotal(payload.chapter_list);
-      await this.booksRepository.updateBookTotal(bookId, total);
+        const payload = this.booksDomainService.buildChapterPayload(dto);
+        const chapter = await this.booksRepository.upsertChapter(bookId, payload);
+        const total = this.booksDomainService.getChapterTotal(payload.chapter_list);
+        await this.booksRepository.updateBookTotal(bookId, total);
 
-      this.auditService.recordEventually({
-        operatorId,
-        action: 'book.chapter.upsert',
-        resourceType: 'book',
-        resourceId: bookId,
-        traceId,
-        after: {
+        this.auditService.recordEventually({
+          operatorId,
+          action: 'book.chapter.upsert',
+          resourceType: 'book',
+          resourceId: bookId,
+          traceId,
+          after: {
+            total,
+          },
+        });
+
+        return {
+          bookId,
           total,
-        },
-      });
-
-      return {
-        bookId,
-        total,
-        chapterList: chapter.chapter_list,
-        origin: chapter.origin,
-        comicId: chapter.comic_id,
-        novelId: chapter.novel_id,
-        otherId: chapter.other_id,
-      };
-    });
+          chapterList: chapter.chapter_list,
+          origin: chapter.origin,
+          comicId: chapter.comic_id,
+          novelId: chapter.novel_id,
+          otherId: chapter.other_id,
+        };
+      },
+    );
   }
 
   private resolveListSort(sort: QueryBooksDto['sort'] = 'latest'): Record<string, 1 | -1> {
@@ -437,10 +483,7 @@ export class BooksApplicationService {
     return buildBookCompositeTags(item.part, item.area, item.style, 3);
   }
 
-  private toHomeItem(
-    item: BookDetailDocument,
-    mediaMap: Map<string, MediaSummary>,
-  ): HomeBookItem {
+  private toHomeItem(item: BookDetailDocument, mediaMap: Map<string, MediaSummary>): HomeBookItem {
     return {
       id: item.id,
       title: item.name,
@@ -515,10 +558,3 @@ export class BooksApplicationService {
     };
   }
 }
-
-
-
-
-
-
-

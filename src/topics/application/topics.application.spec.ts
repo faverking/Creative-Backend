@@ -22,6 +22,9 @@ describe('TopicsApplicationService', () => {
   const usersService = {
     getSafeProfileMap: jest.fn().mockResolvedValue(new Map()),
   };
+  const favoritesService = {
+    isFavorited: jest.fn().mockResolvedValue(false),
+  };
   const workspaceRelationCleanupService = {
     cleanupDeletedTarget: jest.fn(),
   };
@@ -63,10 +66,13 @@ describe('TopicsApplicationService', () => {
       mongoTransactionService as never,
       contentOperationLockService as never,
       usersService as never,
+      favoritesService as never,
       workspaceRelationCleanupService as never,
     );
 
-    const result = (await service.listTopics({}, undefined)) as { items: Array<Record<string, unknown>> };
+    const result = (await service.listTopics({}, undefined)) as {
+      items: Array<Record<string, unknown>>;
+    };
 
     expect(result.items).toHaveLength(1);
     expect(result.items[0]).not.toHaveProperty('downloadUrl');
@@ -104,19 +110,29 @@ describe('TopicsApplicationService', () => {
       mongoTransactionService as never,
       contentOperationLockService as never,
       usersService as never,
+      favoritesService as never,
       workspaceRelationCleanupService as never,
     );
 
-    const anonymousResult = (await service.getTopicDetail('507f1f77bcf86cd799439092')) as Record<string, unknown>;
-    const loggedInResult = (await service.getTopicDetail('507f1f77bcf86cd799439092', 'viewer-id')) as Record<
+    favoritesService.isFavorited.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+
+    const anonymousResult = (await service.getTopicDetail('507f1f77bcf86cd799439092')) as Record<
       string,
       unknown
     >;
+    const loggedInResult = (await service.getTopicDetail(
+      '507f1f77bcf86cd799439092',
+      'viewer-id',
+    )) as Record<string, unknown>;
 
     expect(anonymousResult).not.toHaveProperty('downloadUrl');
     expect(anonymousResult).toHaveProperty('featureFlags', [2, 4, 7]);
     expect(anonymousResult).toHaveProperty('featureFlagLabels', ['官中', '安卓', '同人']);
-    expect(loggedInResult).toHaveProperty('downloadUrl', 'https://downloads.example.com/topic-detail.zip');
+    expect(loggedInResult).toHaveProperty(
+      'downloadUrl',
+      'https://downloads.example.com/topic-detail.zip',
+    );
+    expect(loggedInResult).toHaveProperty('favored', true);
   });
 
   it('filters public topic list by feature flags using all-match semantics', async () => {
@@ -133,6 +149,7 @@ describe('TopicsApplicationService', () => {
       mongoTransactionService as never,
       contentOperationLockService as never,
       usersService as never,
+      favoritesService as never,
       workspaceRelationCleanupService as never,
     );
 

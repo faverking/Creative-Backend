@@ -5,7 +5,10 @@ import { TargetType } from '../../common/enums/target-type.enum';
 import { Visibility } from '../../common/enums/visibility.enum';
 import { buildTopicFeatureFlagTags } from '../../common/utils/content-tag.util';
 import { buildShanghaiDateRangeFilter } from '../../common/utils/date-range.util';
-import { buildKeywordSearchFilter, buildKeywordSearchTerms } from '../../common/utils/keyword-search.util';
+import {
+  buildKeywordSearchFilter,
+  buildKeywordSearchTerms,
+} from '../../common/utils/keyword-search.util';
 import {
   mapPrimaryReferencedMediaAsset,
   mapReferencedMediaAssets,
@@ -25,7 +28,11 @@ import {
 import { AuditService } from '../../infra/audit/audit.service';
 import { MongoTransactionService } from '../../infra/database/mongo-transaction.service';
 import { ContentOperationLockService } from '../../infra/redis/content-operation-lock.service';
-import { MediaApplicationService, type MediaSummary } from '../../media/application/media.application';
+import { FavoritesService } from '../../favorites/favorites.service';
+import {
+  MediaApplicationService,
+  type MediaSummary,
+} from '../../media/application/media.application';
 import { UsersService, type UserSafeProfile } from '../../users/users.service';
 import { WorkspaceRelationCleanupService } from '../../workspace/workspace-relation-cleanup.service';
 import { CreateTopicDto, QueryMyTopicsDto, QueryTopicsDto, UpdateTopicDto } from '../dto/topic.dto';
@@ -58,6 +65,7 @@ export class TopicsApplicationService {
     private readonly mongoTransactionService: MongoTransactionService,
     private readonly contentOperationLockService: ContentOperationLockService,
     private readonly usersService: UsersService,
+    private readonly favoritesService: FavoritesService,
     private readonly workspaceRelationCleanupService: WorkspaceRelationCleanupService,
   ) {}
 
@@ -91,7 +99,10 @@ export class TopicsApplicationService {
       traceId,
     });
 
-    return this.toEditableDetail(created, await this.createMediaSummaryMap(normalizeMediaReferenceIds(created.images)));
+    return this.toEditableDetail(
+      created,
+      await this.createMediaSummaryMap(normalizeMediaReferenceIds(created.images)),
+    );
   }
 
   async listTopics(query: QueryTopicsDto, viewerUserId?: string): Promise<unknown> {
@@ -112,15 +123,27 @@ export class TopicsApplicationService {
     }
     Object.assign(filter, buildKeywordSearchFilter(query.keyword));
 
-    const { items, total } = await this.topicsRepository.list(filter, page, limit, this.resolveListSort(query.sort));
+    const { items, total } = await this.topicsRepository.list(
+      filter,
+      page,
+      limit,
+      this.resolveListSort(query.sort),
+    );
     const mediaMap = await this.createMediaSummaryMap(
       items.flatMap((item) => normalizeMediaReferenceIds(item.images)),
     );
-    const authorMap = query.includeAuthor ? await this.usersService.getSafeProfileMap(items.map((item) => item.user_id.toString())) : new Map<string, UserSafeProfile>();
+    const authorMap = query.includeAuthor
+      ? await this.usersService.getSafeProfileMap(items.map((item) => item.user_id.toString()))
+      : new Map<string, UserSafeProfile>();
 
     return {
       items: items.map((item) =>
-        this.toListItem(item, mediaMap, authorMap.get(item.user_id.toString()), Boolean(viewerUserId)),
+        this.toListItem(
+          item,
+          mediaMap,
+          authorMap.get(item.user_id.toString()),
+          Boolean(viewerUserId),
+        ),
       ),
       page,
       limit,
@@ -140,9 +163,13 @@ export class TopicsApplicationService {
         .map((item) => pickFirstMediaReferenceId(item.images))
         .filter((mediaId): mediaId is string => Boolean(mediaId)),
     );
-    const authorMap = await this.usersService.getSafeProfileMap(items.map((item) => item.user_id.toString()));
+    const authorMap = await this.usersService.getSafeProfileMap(
+      items.map((item) => item.user_id.toString()),
+    );
 
-    return items.map((item) => this.toHomeItem(item, mediaMap, authorMap.get(item.user_id.toString())));
+    return items.map((item) =>
+      this.toHomeItem(item, mediaMap, authorMap.get(item.user_id.toString())),
+    );
   }
 
   async listMyTopics(userId: string, query: QueryMyTopicsDto): Promise<unknown> {
@@ -193,9 +220,20 @@ export class TopicsApplicationService {
       throw new NotFoundException('Topic not found');
     }
 
-    const mediaMap = await this.createMediaSummaryMap(normalizeMediaReferenceIds(topic.images));
-    const authorMap = await this.usersService.getSafeProfileMap([topic.user_id.toString()]);
-    return this.toPublicDetail(topic, mediaMap, authorMap.get(topic.user_id.toString()), Boolean(viewerUserId));
+    const [mediaMap, authorMap, favored] = await Promise.all([
+      this.createMediaSummaryMap(normalizeMediaReferenceIds(topic.images)),
+      this.usersService.getSafeProfileMap([topic.user_id.toString()]),
+      this.favoritesService.isFavorited(viewerUserId, TargetType.TOPIC, id),
+    ]);
+    return {
+      ...this.toPublicDetail(
+        topic,
+        mediaMap,
+        authorMap.get(topic.user_id.toString()),
+        Boolean(viewerUserId),
+      ),
+      favored,
+    };
   }
 
   async getMyTopicDetail(id: string, userId: string): Promise<unknown> {
@@ -208,10 +246,18 @@ export class TopicsApplicationService {
       throw new ForbiddenException('No permission to access this topic');
     }
 
-    return this.toEditableDetail(topic, await this.createMediaSummaryMap(normalizeMediaReferenceIds(topic.images)));
+    return this.toEditableDetail(
+      topic,
+      await this.createMediaSummaryMap(normalizeMediaReferenceIds(topic.images)),
+    );
   }
 
-  async updateTopic(id: string, userId: string, dto: UpdateTopicDto, traceId?: string): Promise<unknown> {
+  async updateTopic(
+    id: string,
+    userId: string,
+    dto: UpdateTopicDto,
+    traceId?: string,
+  ): Promise<unknown> {
     return this.contentOperationLockService.runWithContentLock(TargetType.TOPIC, id, async () => {
       const topic = await this.topicsRepository.findById(id);
       if (!topic) {
@@ -234,7 +280,8 @@ export class TopicsApplicationService {
       if (typeof dto.content === 'string') payload.content = dto.content;
       if (typeof dto.desc === 'string') payload.desc = dto.desc;
       if (typeof dto.downloadUrl === 'string') payload.download_url = dto.downloadUrl;
-      if (Array.isArray(dto.featureFlags)) payload.feature_flags = this.normalizeFeatureFlags(dto.featureFlags);
+      if (Array.isArray(dto.featureFlags))
+        payload.feature_flags = this.normalizeFeatureFlags(dto.featureFlags);
       payload.search_terms = buildKeywordSearchTerms(
         typeof dto.title === 'string' ? dto.title : topic.title,
         typeof dto.desc === 'string' ? dto.desc : topic.desc,
@@ -253,7 +300,10 @@ export class TopicsApplicationService {
         traceId,
       });
 
-      return this.toEditableDetail(updated, await this.createMediaSummaryMap(normalizeMediaReferenceIds(updated.images)));
+      return this.toEditableDetail(
+        updated,
+        await this.createMediaSummaryMap(normalizeMediaReferenceIds(updated.images)),
+      );
     });
   }
 
@@ -276,10 +326,16 @@ export class TopicsApplicationService {
       const linkedMediaIds = normalizeMediaReferenceIds(topic.images);
       const result = await this.mongoTransactionService.runInTransaction(async (session) => {
         await this.topicsRepository.deleteById(id, session);
-        return this.workspaceRelationCleanupService.cleanupDeletedTarget(TargetType.TOPIC, id, session);
+        return this.workspaceRelationCleanupService.cleanupDeletedTarget(
+          TargetType.TOPIC,
+          id,
+          session,
+        );
       });
 
-      let mediaCleanup: { deletedIds: string[]; skipped: Array<{ id: string; reason: string }> } | undefined;
+      let mediaCleanup:
+        | { deletedIds: string[]; skipped: Array<{ id: string; reason: string }> }
+        | undefined;
       if (cascadeMedia) {
         mediaCleanup = await this.mediaApplicationService.deleteOwnedImagesIfUnreferenced(
           linkedMediaIds,
@@ -420,10 +476,7 @@ export class TopicsApplicationService {
     };
   }
 
-  private toEditableDetail(
-    topic: TopicDocument,
-    mediaMap: Map<string, MediaSummary>,
-  ) {
+  private toEditableDetail(topic: TopicDocument, mediaMap: Map<string, MediaSummary>) {
     return {
       ...this.toPublicDetail(topic, mediaMap, undefined, true),
       imageMediaIds: normalizeMediaReferenceIds(topic.images),
@@ -445,14 +498,8 @@ export class TopicsApplicationService {
   }
 
   private normalizeFeatureFlags(featureFlags?: number[]) {
-    return Array.from(new Set((featureFlags ?? []).filter((featureFlag) => Number.isInteger(featureFlag))));
+    return Array.from(
+      new Set((featureFlags ?? []).filter((featureFlag) => Number.isInteger(featureFlag))),
+    );
   }
 }
-
-
-
-
-
-
-
-
