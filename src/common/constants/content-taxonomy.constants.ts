@@ -41,7 +41,13 @@ export const BOOK_STYLE_LABELS: Record<number, string> = {
   107: '科幻',
   108: '治愈',
   109: '历史',
-  110: '喜剧',
+  110: '搞笑',
+  111: '异界',
+  112: '战斗',
+  113: '日常',
+  114: '推理',
+  115: '机战',
+  116: '古风',
 };
 
 export const BOOK_STYLE_IDS = Object.keys(BOOK_STYLE_LABELS).map((key) => Number(key));

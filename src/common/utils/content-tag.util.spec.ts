@@ -42,9 +42,11 @@ describe('content-tag.util', () => {
       buildBookStyleTags([
         { id: 101, name: 'old-campus-name' },
         { id: 105, name: 'old-romance-name' },
+        { id: 110, name: 'old-comedy-name' },
+        { id: 115, name: 'old-mecha-name' },
         { id: 999, name: 'removed-fallback-name' },
       ]),
-    ).toEqual([BOOK_STYLE_LABELS[101], BOOK_STYLE_LABELS[105]]);
+    ).toEqual([BOOK_STYLE_LABELS[101], BOOK_STYLE_LABELS[105], '搞笑', BOOK_STYLE_LABELS[115]]);
   });
 
   it('combines part area and style tags using the new taxonomy only', () => {
