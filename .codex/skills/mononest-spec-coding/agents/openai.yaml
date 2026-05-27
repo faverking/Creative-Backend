@@ -1,0 +1,4 @@
+interface:
+  display_name: "MonoNest Spec Coding"
+  short_description: "按 MonoNest spec 完成后端编码、清理与交付"
+  default_prompt: "Use $mononest-spec-coding to implement MonoNest backend changes according to docs/spec.md."

@@ -12,7 +12,7 @@
 
 ## 本地开发
 
-基础要求：
+要求：
 
 - Node.js `>=20`
 - pnpm `10.11.0`
@@ -26,7 +26,7 @@ pnpm install
 pnpm start:dev
 ```
 
-本地服务默认地址：
+默认地址：
 
 ```text
 http://localhost:3000/api/v1
@@ -44,9 +44,10 @@ pnpm lint
 pnpm test
 pnpm build
 pnpm start:prod
+pnpm build && pnpm deps:prod:check
 ```
 
-PM2 本地或服务器手动管理命令：
+PM2：
 
 ```bash
 pnpm pm2:start
@@ -57,27 +58,31 @@ pnpm pm2:stop
 
 ## 生产部署
 
-生产唯一主路径为 GitHub Actions 自动发布：
+生产主路径：
 
 ```text
 push main -> GitHub Actions 构建 -> 上传阿里云 -> release 目录解压 -> PM2 启动当前 release
 ```
 
-部署工作流位于：
+部署入口：
 
 ```text
 .github/workflows/deploy-backend.yml
 ```
 
-生产环境变量由服务器上的 `/www/env/backend/.env` 管理，模板见：
+生产环境变量由服务器文件管理：
+
+```text
+/www/env/backend/.env
+```
+
+模板：
 
 ```text
 deploy/env.production.example
 ```
 
-详细服务器准备、目录约定、Secrets、回滚和排障说明见 [工程目录与运行指南](./docs/工程目录与运行指南.md)。
-
-健康检查默认地址：
+健康检查：
 
 ```text
 GET /api/v1/health
@@ -85,7 +90,10 @@ GET /api/v1/health
 
 ## 文档索引
 
-- [工程目录与运行指南](./docs/工程目录与运行指南.md)
-- [API接口与参数说明](./docs/API接口与参数说明.md)
+- [AI 编码约束](./docs/spec.md)
+- [工程概览](./docs/overview.md)
+- [流程入口](./docs/workflows/README.md)
+- [API 接口与参数说明](./docs/API接口与参数说明.md)
 - [业务与架构设计说明](./docs/业务与架构设计说明.md)
-- [实现约束规范](./docs/spec.md)
+- [工程目录与运行指南](./docs/工程目录与运行指南.md)
+- [部署历史 runbook](./docs/deployment-guide.md)
