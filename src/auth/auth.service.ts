@@ -159,12 +159,19 @@ export class AuthService {
       this.configService.get<string>('jwt.refreshExpiresIn', '7d'),
     );
 
-    await this.authRepository.updateSession(session.id, {
-      refresh_token_hash: refreshHash,
-      expire_at: new Date(Date.now() + refreshExpireMs),
-      ip,
-      ua,
-    });
+    const rotated = await this.authRepository.updateActiveSessionIfRefreshTokenHashMatches(
+      session.id,
+      session.refresh_token_hash,
+      {
+        refresh_token_hash: refreshHash,
+        expire_at: new Date(Date.now() + refreshExpireMs),
+        ip,
+        ua,
+      },
+    );
+    if (!rotated) {
+      throw new UnauthorizedException('Refresh token session invalid');
+    }
 
     await this.auditService.recordCritical({
       operatorId: user.id,

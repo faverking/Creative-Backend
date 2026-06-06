@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectConnection } from '@nestjs/mongoose';
 import type { ClientSession, Connection } from 'mongoose';
 
@@ -8,14 +9,19 @@ export class MongoTransactionService implements OnModuleInit {
   private transactionSupportResolved = false;
   private transactionSupported = false;
 
-  constructor(@InjectConnection() private readonly connection: Connection) {}
+  constructor(
+    @InjectConnection() private readonly connection: Connection,
+    private readonly configService: ConfigService,
+  ) {}
 
   async onModuleInit(): Promise<void> {
     await this.resolveTransactionSupport();
+    this.assertTransactionsAvailableIfRequired();
   }
 
   async runInTransaction<T>(handler: (session?: ClientSession) => Promise<T>): Promise<T> {
     if (!(await this.resolveTransactionSupport())) {
+      this.assertTransactionsAvailableIfRequired();
       return handler(undefined);
     }
 
@@ -32,6 +38,7 @@ export class MongoTransactionService implements OnModuleInit {
       if (this.isTransactionUnsupportedError(error)) {
         this.transactionSupportResolved = true;
         this.transactionSupported = false;
+        this.assertTransactionsAvailableIfRequired();
         this.logger.warn('Mongo transaction is not supported by the current deployment, fallback to non-transactional execution.');
         return handler(undefined);
       }
@@ -81,5 +88,22 @@ export class MongoTransactionService implements OnModuleInit {
     }
 
     return 'unknown error';
+  }
+
+  private assertTransactionsAvailableIfRequired(): void {
+    if (!this.isTransactionRequired() || this.transactionSupported) {
+      return;
+    }
+
+    throw new Error(
+      'Mongo transactions are required but unavailable. Configure MongoDB as a replica set or mongos, or set MONGO_REQUIRE_TRANSACTIONS=false outside production.',
+    );
+  }
+
+  private isTransactionRequired(): boolean {
+    return this.configService.get<boolean>(
+      'mongo.requireTransactions',
+      process.env.NODE_ENV === 'production',
+    );
   }
 }

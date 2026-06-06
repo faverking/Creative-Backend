@@ -30,6 +30,26 @@ export class AuthRepository {
     await this.userSessionModel.updateOne({ _id: id }, payload).exec();
   }
 
+  async updateActiveSessionIfRefreshTokenHashMatches(
+    id: string,
+    expectedRefreshTokenHash: string,
+    payload: UpdateSessionPayload,
+  ): Promise<boolean> {
+    const result = await this.userSessionModel
+      .updateOne(
+        {
+          _id: id,
+          refresh_token_hash: expectedRefreshTokenHash,
+          revoked_at: { $exists: false },
+          expire_at: { $gt: new Date() },
+        },
+        payload,
+      )
+      .exec();
+
+    return result.matchedCount > 0;
+  }
+
   async listUserSessions(userId: string): Promise<UserSessionDocument[]> {
     return this.userSessionModel
       .find({ user_id: new Types.ObjectId(userId) })

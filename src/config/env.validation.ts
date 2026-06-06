@@ -13,6 +13,11 @@ export const envValidationSchema = Joi.object({
   }),
   MONGO_DB_NAME: Joi.string().default('mononest'),
   MONGO_SYNC_INDEXES_ON_BOOT: Joi.boolean().truthy('true').falsy('false').default(false),
+  MONGO_REQUIRE_TRANSACTIONS: Joi.when('NODE_ENV', {
+    is: 'production',
+    then: Joi.boolean().truthy('true').falsy('false').default(true),
+    otherwise: Joi.boolean().truthy('true').falsy('false').default(false),
+  }),
 
   REDIS_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
   REDIS_URL: Joi.string().allow('').default(''),

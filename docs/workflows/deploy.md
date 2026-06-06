@@ -87,6 +87,8 @@ npm install -g pm2
 
 模板：`deploy/env.production.example`。
 
+生产默认要求 `MONGO_REQUIRE_TRANSACTIONS=true`。强一致链路依赖 MongoDB 事务，服务器 MongoDB 必须运行在 replica set 或 mongos 模式；standalone MongoDB 会导致后端启动失败。
+
 GitHub Secrets：
 
 - `SERVER_HOST`
@@ -139,6 +141,7 @@ location /api/ {
 
 - `/www/env/backend/.env` 存在且 `NODE_ENV=production`。
 - `MONGO_URI` 指向生产数据库。
+- `MONGO_REQUIRE_TRANSACTIONS=true`，且 MongoDB 是 replica set 或 mongos。
 - JWT secret 不是示例值。
 - `CORS_ORIGINS` 只包含真实前端地址。
 - `MEDIA_STORAGE_ROOT` 指向持久化目录且 PM2 用户可写。
