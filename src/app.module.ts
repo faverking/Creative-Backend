@@ -3,7 +3,6 @@ import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AdminModule } from './admin/admin.module';
-import { AiModule } from './ai/ai.module';
 import { ArticlesModule } from './articles/articles.module';
 import { AuthModule } from './auth/auth.module';
 import { BooksModule } from './books/books.module';
@@ -64,7 +63,6 @@ const envFilePath =
     MetricsModule,
     AuditModule,
     AuthModule,
-    AiModule,
     UsersModule,
     MediaModule,
     ArticlesModule,

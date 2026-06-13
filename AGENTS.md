@@ -9,7 +9,7 @@
 3. 涉及命令、测试、构建、提交或部署时，再读 `docs/workflows/README.md` 和对应子文档。
 4. 按任务命中补读：
    - 接口协议：`docs/API接口与参数说明.md`
-   - 业务规则、架构设计、AI 编辑辅助：`docs/业务与架构设计说明.md`
+   - 业务规则、架构设计：`docs/业务与架构设计说明.md`
    - 运行、环境、生产部署、排障：`docs/工程目录与运行指南.md`
    - 前后端一体化部署历史 runbook：`docs/deployment-guide.md`
 
@@ -21,8 +21,8 @@
 ## 仓库定位
 
 - MonoNest 是 `NestJS 11 + MongoDB/Mongoose + JWT/OAuth` 的内容平台后端。
-- 服务对象：`MonoApp`、`portal-web` 公开读取侧、`admin-web` 管理编辑侧，以及登录态 AI 编辑辅助场景。
-- 稳定能力：公开内容读取、管理端治理、媒体上传/预览/下载/ZIP、搜索推荐、评论收藏通知历史、AI 编辑辅助。
+- 服务对象：`MonoApp`、`portal-web` 公开读取侧、`admin-web` 管理编辑侧。
+- 稳定能力：公开内容读取、管理端治理、媒体上传/预览/下载/ZIP、搜索推荐、评论收藏通知历史。
 - 运行要求：Node.js `>=20`，pnpm `10.11.0`，MongoDB 必需，Redis 可选，PM2 用于生产进程管理。
 - 默认 API 前缀：`/api/v1`；健康检查：`GET /api/v1/health`。
 
@@ -41,7 +41,7 @@
 - 核心内容：`articles` 情报、`topics` 游戏、`books` 书库、`images` 图包。
 - 内容配套：`comments` 评论与回复、`favorites` 收藏关系、`drafts` 草稿、`notification` 消息通知、`history` 浏览历史、`featured-contents` 精选配置。
 - 聚合与发现：`home` 首页聚合、`search` 搜索/精选/相关推荐。
-- 后台与辅助：`admin` 内容治理与汇总、`ai` 管理端 AI 编辑辅助、`media` 上传预览下载 ZIP、`report` 预留报表域。
+- 后台与辅助：`admin` 内容治理与汇总、`media` 上传预览下载 ZIP、`report` 预留报表域。
 - 用户与认证：`auth` 登录/刷新/OAuth/授权，`users` 用户资料与业务统计。
 - 横切与基础设施：`common` 守卫/装饰器/拦截器/常量/工具，`config` 环境配置与校验，`infra` Mongo/Redis/logger/storage/audit/mail/metrics，`interactions` 收藏/评论计数与关系校验。
 - 内部跨域能力：`workspace` 跨内容摘要、关系清理、访问记录；不单独暴露 HTTP 控制器。
@@ -60,8 +60,8 @@
 
 - `docs/spec.md`：AI 编码硬约束、分层边界、数据一致性、业务场景硬规则、校验矩阵。
 - `docs/overview.md`：工程事实、顶层目录、源码模块、启动链路、环境变量组、入口脚本。
-- `docs/API接口与参数说明.md`：所有对外协议，覆盖 Auth、Users、Home、Search、Admin、四类内容、Drafts、Comments、Favorites、Notifications、History、Media、Admin AI。
-- `docs/业务与架构设计说明.md`：四类核心内容语义、内容生命周期、首页/搜索/精选、模块边界、AI 编辑辅助契约、稳定字典。
+- `docs/API接口与参数说明.md`：所有对外协议，覆盖 Auth、Users、Home、Search、Admin、四类内容、Drafts、Comments、Favorites、Notifications、History、Media。
+- `docs/业务与架构设计说明.md`：四类核心内容语义、内容生命周期、首页/搜索/精选、模块边界、稳定字典。
 - `docs/工程目录与运行指南.md`：目录结构、环境变量、索引同步、本地运行、阿里云发布、PM2、回滚、上线检查、排障。
 - `docs/workflows/README.md`：命令流程入口；子文档为 `build.md`、`test.md`、`commit.md`、`deploy.md`。
 
@@ -96,7 +96,6 @@
 - 历史记录是最近访问模型，不是完整行为流水。
 - 通知读模型优先满足可定位、可跳转、可标记已读，不堆额外 viewer state。
 - 管理端设私密、取消精选、永久删除必须处理关联清理；后台治理和管理审计属于强一致链路。
-- AI 模块只返回编辑建议，不自动保存、发布或回写业务库；流式接口中 `completed` 才是最终可应用结果。
 - 媒体上传、预览、下载、ZIP 解包/打包要区分 HTTP 行为，不混用 `preview` 与 `download`。
 - 不要恢复或兼容历史字段：图包 `width`/`height`、书籍 `hots`、游戏 `scheduleLabel`。
 
@@ -132,7 +131,7 @@
 ## 文档同步规则
 
 - API 协议变化：同步 `docs/API接口与参数说明.md`。
-- 业务规则、模块边界、架构设计、AI 编辑辅助契约变化：同步 `docs/业务与架构设计说明.md`。
+- 业务规则、模块边界、架构设计变化：同步 `docs/业务与架构设计说明.md`。
 - 运行、环境、部署、排障变化：同步 `docs/工程目录与运行指南.md` 或 `docs/workflows/deploy.md`。
 - 命令、测试、构建、提交、部署流程变化：同步 `docs/workflows/*`。
 - AI 编码硬规则、分层边界、数据一致性、删除清理、评论/收藏/通知/历史/后台治理模式变化：同步 `docs/spec.md`。

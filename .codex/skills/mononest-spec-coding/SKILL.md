@@ -15,7 +15,7 @@ description: Use this skill for MonoNest backend tasks that must follow docs/spe
 2. 涉及模块结构或工程事实时，读 `docs/overview.md`。
 3. 涉及命令、测试、构建、提交或部署时，读 `docs/workflows/README.md` 和对应子文档。
 4. 涉及接口协议时，读 `docs/API接口与参数说明.md`。
-5. 涉及业务规则、AI 编辑辅助、内容生命周期或前后端契约时，读 `docs/业务与架构设计说明.md`。
+5. 涉及业务规则、内容生命周期或前后端契约时，读 `docs/业务与架构设计说明.md`。
 6. 涉及生产环境、PM2、GitHub Actions、回滚或排障时，读 `docs/工程目录与运行指南.md`。
 
 ## 编码循环

@@ -4,7 +4,7 @@
 
 ## 1. 一句话
 
-MonoNest 是基于 `NestJS + MongoDB + JWT/OAuth` 的内容平台后端，服务公开内容读取、管理端内容治理、媒体上传、搜索推荐、用户互动和 AI 编辑辅助。
+MonoNest 是基于 `NestJS + MongoDB + JWT/OAuth` 的内容平台后端，服务公开内容读取、管理端内容治理、媒体上传、搜索推荐和用户互动。
 
 ## 2. 技术与运行
 
@@ -49,7 +49,6 @@ dist/                 构建产物
 后台与辅助：
 
 - `admin`：管理端内容治理与汇总
-- `ai`：管理端 AI 编辑辅助
 - `media`：上传、预览、下载、ZIP
 - `users`、`auth`：用户、登录、刷新、OAuth、授权
 
@@ -95,7 +94,6 @@ ConfigModule.forRoot
 - Redis：`REDIS_ENABLED`、`REDIS_URL`
 - JWT：`JWT_ACCESS_SECRET`、`JWT_REFRESH_SECRET` 等
 - OAuth：`AUTH_ENABLE_OAUTH`、`OAUTH_GOOGLE_*`
-- AI：`OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL_ADMIN_COMPOSE`
 - Media：`MEDIA_STORAGE_ROOT`、上传大小、ZIP 限制、预览并发等
 
 模板：`deploy/env.production.example`。

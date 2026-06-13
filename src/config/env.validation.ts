@@ -45,18 +45,6 @@ export const envValidationSchema = Joi.object({
   THROTTLE_LIMIT: Joi.number().min(1).default(60),
   REQUEST_BODY_LIMIT: Joi.string().default('1mb'),
 
-  OPENAI_API_KEY: Joi.when('NODE_ENV', {
-    is: 'production',
-    then: Joi.string().required(),
-    otherwise: Joi.string().allow('').default(''),
-  }),
-  OPENAI_BASE_URL: Joi.string().uri().default('https://api.openai.com/v1'),
-  OPENAI_MODEL_ADMIN_COMPOSE: Joi.string().default('gpt-5.4-mini'),
-  OPENAI_TIMEOUT_MS: Joi.number().min(1000).max(120000).default(30000),
-  OPENAI_MAX_INPUT_CHARS: Joi.number().min(1000).max(200000).default(12000),
-  OPENAI_MAX_OUTPUT_TOKENS: Joi.number().min(64).max(8192).default(1200),
-  AI_ADMIN_STREAM_ENABLED: Joi.boolean().truthy('true').falsy('false').default(true),
-
   MEDIA_STORAGE_ROOT: Joi.string().default('.storage/media'),
   MEDIA_IMAGE_MAX_FILE_SIZE: Joi.number().min(1024).default(20 * 1024 * 1024),
   MEDIA_AUDIO_MAX_FILE_SIZE: Joi.number().min(1024).default(50 * 1024 * 1024),
